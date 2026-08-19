@@ -1,5 +1,6 @@
 {
   "name": "dzen-to-vk-rss",
+  "description": "Automatic full-article RSS mirror for the Dzen channel kodistori1",
   "private": true,
   "type": "module",
   "scripts": {
