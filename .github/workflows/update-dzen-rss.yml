@@ -1,0 +1,49 @@
+name: Update Dzen RSS
+
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'package.json'
+      - '.github/workflows/update-dzen-rss.yml'
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dzen-rss-updater
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build RSS feed
+        run: npm run update-feed
+
+      - name: Commit feed updates
+        run: |
+          if git diff --quiet -- feed.xml state.json; then
+            echo "No feed changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add feed.xml state.json
+          git commit -m "Update Dzen RSS"
+          git push
