@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "update-feed": "node scripts/build-feed.mjs"
+    "update-feed": "node scripts/build-feed-v2.mjs"
   },
   "dependencies": {
     "puppeteer-core": "^24.16.0"
