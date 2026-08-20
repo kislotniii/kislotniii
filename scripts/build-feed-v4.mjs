@@ -5,6 +5,7 @@ const CHANNEL_URL = 'https://dzen.ru/kodistori1';
 const FEED_URL = 'https://raw.githubusercontent.com/kislotniii/kislotniii/main/feed.xml';
 const STATE_PATH = new URL('../state.json', import.meta.url);
 const FEED_PATH = new URL('../feed.xml', import.meta.url);
+const RECOVERY_URL = 'https://dzen.ru/a/aoVi01c91GQkz-sh';
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -245,19 +246,28 @@ async function main() {
     }
 
     const seen = new Set(state.seen);
-    const fresh = current.filter((item) => !seen.has(normalizeUrl(item.url)));
+    let fresh = current.filter((item) => !seen.has(normalizeUrl(item.url)));
+
+    // Recovery for the noon article that was accidentally absorbed into the
+    // bootstrap when v4 was deployed after it had already been published.
+    // This branch can only run while the feed is empty; after successful
+    // recovery state.items contains the article and it will not repeat.
+    if (!fresh.length && !state.items?.length) {
+      const recovery = current.find((item) => normalizeUrl(item.url) === RECOVERY_URL);
+      if (recovery) {
+        console.log(`Recovering skipped article: ${RECOVERY_URL}`);
+        fresh = [recovery];
+      }
+    }
+
     console.log(`New article(s): ${fresh.length}`);
 
     if (!fresh.length) {
-      // Keep only the already-exposed newest item in the feed; do not accumulate history.
       const currentFeedItem = state.items?.[0] || null;
       await saveState(state, currentFeedItem);
       return;
     }
 
-    // The channel DOM is newest-first. If a transient mismatch ever makes several
-    // items look new, expose only the newest one and mark the rest as seen. This
-    // prevents VK from dumping a backlog all at once.
     const newest = fresh[0];
     const full = await scrapeArticle(browser, newest);
     state.seen.push(...fresh.map((x) => normalizeUrl(x.url)));
