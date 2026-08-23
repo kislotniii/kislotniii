@@ -47,6 +47,30 @@ function extractTag(itemXml, tag) {
   return plain ? decodeXml(plain[1].trim()) : '';
 }
 
+async function telegram(method, body = {}) {
+  const response = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.ok) {
+    throw new Error(`Telegram ${method} failed: ${response.status} ${JSON.stringify(data)}`);
+  }
+  return data.result;
+}
+
+async function verifyTelegramAccess() {
+  const me = await telegram('getMe');
+  const member = await telegram('getChatMember', { chat_id: CHAT_ID, user_id: me.id });
+  const allowedStatus = member?.status === 'administrator' || member?.status === 'creator';
+  const canPost = member?.status === 'creator' || member?.can_post_messages !== false;
+  if (!allowedStatus || !canPost) {
+    throw new Error(`Bot @${me.username || me.id} cannot publish to ${CHAT_ID}. Status: ${member?.status || 'unknown'}, can_post_messages: ${member?.can_post_messages}`);
+  }
+  console.log(`Telegram access verified: @${me.username || me.id} -> ${CHAT_ID} (${member.status})`);
+}
+
 async function loadTelegramState() {
   try {
     return JSON.parse(await fs.readFile(STATE_PATH, 'utf8'));
@@ -74,10 +98,8 @@ function parseFeed(xml) {
 }
 
 function buildCaption(title, description, link) {
-  const text = decodeHtml(description)
-    .replace(title, '')
-    .trim();
-  const excerpt = text.length > 620 ? `${text.slice(0, 617).trimEnd()}…` : text;
+  const text = decodeHtml(description).replace(title, '').trim();
+  const excerpt = text.length > 600 ? `${text.slice(0, 597).trimEnd()}…` : text;
   return `<b>${escapeHtml(title)}</b>\n\n${escapeHtml(excerpt)}\n\n<a href="${escapeHtml(link)}">Читать полностью в Дзене</a>`;
 }
 
@@ -106,34 +128,22 @@ async function sendPhotoPost(article) {
 
   const response = await fetch(endpoint, { method: 'POST', body: form });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) {
-    throw new Error(`Telegram sendPhoto failed: ${response.status} ${JSON.stringify(data)}`);
-  }
+  if (!response.ok || !data.ok) throw new Error(`Telegram sendPhoto failed: ${response.status} ${JSON.stringify(data)}`);
 }
 
 async function sendTextPost(article) {
-  const endpoint = `https://api.telegram.org/bot${TOKEN}/sendMessage`;
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: CHAT_ID,
-      text: buildCaption(article.title, article.description, article.link),
-      parse_mode: 'HTML',
-      disable_web_page_preview: false,
-    }),
+  await telegram('sendMessage', {
+    chat_id: CHAT_ID,
+    text: buildCaption(article.title, article.description, article.link),
+    parse_mode: 'HTML',
+    disable_web_page_preview: false,
   });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) {
-    throw new Error(`Telegram sendMessage failed: ${response.status} ${JSON.stringify(data)}`);
-  }
 }
 
 async function main() {
-  if (!TOKEN) {
-    console.log('TELEGRAM_BOT_TOKEN is not configured; Telegram publishing skipped.');
-    return;
-  }
+  if (!TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is not configured in GitHub Actions secrets.');
+
+  await verifyTelegramAccess();
 
   const xml = await fs.readFile(FEED_PATH, 'utf8');
   const article = parseFeed(xml);
@@ -144,7 +154,7 @@ async function main() {
 
   const state = await loadTelegramState();
   if (state.lastPublishedUrl === article.link) {
-    console.log(`Telegram already published: ${article.link}`);
+    console.log(`Telegram already published/seeded: ${article.link}`);
     return;
   }
 
