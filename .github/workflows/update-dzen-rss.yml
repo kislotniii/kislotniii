@@ -38,12 +38,12 @@ jobs:
 
       - name: Commit feed updates
         run: |
-          if git diff --quiet -- feed.xml state.json; then
+          if git diff --quiet -- feed.xml state.json assets; then
             echo "No feed changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add feed.xml state.json
+          git add feed.xml state.json assets
           git commit -m "Update Dzen RSS"
           git push
