@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const TOKEN = process.env.VK_ACCESS_TOKEN || '';
 const GROUP_ID = String(process.env.VK_GROUP_ID || '240532552').replace(/^-/,'');
@@ -56,7 +57,7 @@ function parseFeed(xml) {
 }
 
 function buildMessage(article) {
-  let text = decodeHtml(article.description).replace(article.title, '').trim();
+  const text = decodeHtml(article.description).replace(article.title, '').trim();
   const excerpt = text.length > 700 ? `${text.slice(0, 697).trimEnd()}…` : text;
   return `${article.title}\n\n${excerpt}\n\nЧитать полностью в Дзене:\n${article.link}`;
 }
@@ -83,7 +84,9 @@ async function vk(method, params = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.error) {
-    throw new Error(`${method} failed: ${response.status} ${JSON.stringify(data.error || data)}`);
+    const error = new Error(`${method} failed: ${response.status} ${JSON.stringify(data.error || data)}`);
+    error.vkError = data.error || null;
+    throw error;
   }
   return data.response;
 }
@@ -108,29 +111,69 @@ async function imageBytes(imageUrl) {
   return { bytes, type, name: `cover${ext}` };
 }
 
-async function uploadWallPhoto(imageUrl) {
-  const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID });
-  if (!upload?.upload_url) throw new Error('VK did not return wall upload URL');
-
+async function uploadToServer(uploadUrl, imageUrl) {
   const image = await imageBytes(imageUrl);
   const form = new FormData();
   form.append('photo', new Blob([image.bytes], { type: image.type }), image.name);
-
-  const uploadedResponse = await fetch(upload.upload_url, { method: 'POST', body: form });
-  const uploaded = await uploadedResponse.json().catch(() => ({}));
-  if (!uploadedResponse.ok || !uploaded.server || !uploaded.photo || !uploaded.hash) {
-    throw new Error(`VK photo upload failed: ${uploadedResponse.status} ${JSON.stringify(uploaded)}`);
+  const response = await fetch(uploadUrl, { method: 'POST', body: form });
+  const uploaded = await response.json().catch(() => ({}));
+  if (!response.ok || !uploaded.server || !uploaded.photo || !uploaded.hash) {
+    throw new Error(`VK image upload failed: ${response.status} ${JSON.stringify(uploaded)}`);
   }
+  return uploaded;
+}
 
+function photoAttachment(photo) {
+  if (!photo?.owner_id || !photo?.id) throw new Error(`VK did not return a saved photo: ${JSON.stringify(photo)}`);
+  return `photo${photo.owner_id}_${photo.id}${photo.access_key ? `_${photo.access_key}` : ''}`;
+}
+
+async function uploadWallPhoto(imageUrl) {
+  const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID });
+  if (!upload?.upload_url) throw new Error('VK did not return wall upload URL');
+  const uploaded = await uploadToServer(upload.upload_url, imageUrl);
   const saved = await vk('photos.saveWallPhoto', {
     group_id: GROUP_ID,
     server: uploaded.server,
     photo: uploaded.photo,
     hash: uploaded.hash,
   });
-  const photo = Array.isArray(saved) ? saved[0] : null;
-  if (!photo?.owner_id || !photo?.id) throw new Error(`VK save wall photo failed: ${JSON.stringify(saved)}`);
-  return `photo${photo.owner_id}_${photo.id}${photo.access_key ? `_${photo.access_key}` : ''}`;
+  return photoAttachment(Array.isArray(saved) ? saved[0] : null);
+}
+
+async function uploadMessagesPhoto(imageUrl) {
+  const upload = await vk('photos.getMessagesUploadServer', {});
+  if (!upload?.upload_url) throw new Error('VK did not return messages upload URL');
+  const uploaded = await uploadToServer(upload.upload_url, imageUrl);
+  const saved = await vk('photos.saveMessagesPhoto', {
+    server: uploaded.server,
+    photo: uploaded.photo,
+    hash: uploaded.hash,
+  });
+  return photoAttachment(Array.isArray(saved) ? saved[0] : null);
+}
+
+async function imageAttachment(imageUrl) {
+  try {
+    const attachment = await uploadWallPhoto(imageUrl);
+    console.log('VK image attached via wall photo upload.');
+    return attachment;
+  } catch (wallError) {
+    console.warn(`Wall photo upload unavailable: ${wallError.message}`);
+  }
+
+  try {
+    const attachment = await uploadMessagesPhoto(imageUrl);
+    console.log('VK image attached via messages photo upload fallback.');
+    return attachment;
+  } catch (messagesError) {
+    console.warn(`Messages photo upload unavailable: ${messagesError.message}`);
+  }
+
+  // VK wall.post accepts one external URL in attachments. Our mirrored GitHub
+  // image is used as the final fallback so the post still gets a visual card.
+  console.log('VK image will be attached as an external GitHub image URL fallback.');
+  return imageUrl;
 }
 
 async function main() {
@@ -153,13 +196,15 @@ async function main() {
   }
 
   const attachments = [];
-  if (article.image) attachments.push(await uploadWallPhoto(article.image));
+  if (article.image) attachments.push(await imageAttachment(article.image));
 
+  const guid = crypto.createHash('sha256').update(`dzen-vk:${article.link}`).digest('hex').slice(0, 32);
   const result = await vk('wall.post', {
     owner_id: `-${GROUP_ID}`,
     from_group: 1,
     message: buildMessage(article),
     attachments: attachments.join(','),
+    guid,
   });
 
   await saveState(article.link, result?.post_id ?? null);
