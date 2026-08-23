@@ -1,7 +1,8 @@
 {
-  "checkedAt": "2026-08-23T15:49:23.509Z",
+  "checkedAt": "2026-08-23T16:55:55.649Z",
   "ok": false,
   "source": "YandexZenBridge",
   "urls": [],
-  "error": "fetch failed"
+  "error": "No article URLs found in bridge response",
+  "httpStatus": 200
 }
