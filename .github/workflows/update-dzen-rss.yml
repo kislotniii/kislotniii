@@ -40,13 +40,19 @@ jobs:
         run: |
           if git diff --quiet -- feed.xml state.json assets; then
             echo "No feed changes"
-            exit 0
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add feed.xml state.json assets
+            git commit -m "Update Dzen RSS"
+            git push
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add feed.xml state.json assets
-          git commit -m "Update Dzen RSS"
-          git push
+
+      - name: Verify Telegram connection
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: '@kontrastyepox'
+        run: node scripts/verify-telegram.mjs
 
       - name: Publish to Telegram
         env:
@@ -56,12 +62,12 @@ jobs:
 
       - name: Commit Telegram state
         run: |
-          if git diff --quiet -- telegram-state.json; then
+          if git diff --quiet -- telegram-state.json telegram-check.json; then
             echo "No Telegram state changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add telegram-state.json
-          git commit -m "Update Telegram publish state"
+          git add telegram-state.json telegram-check.json
+          git commit -m "Update Telegram connection state"
           git push
