@@ -54,6 +54,18 @@ jobs:
           TELEGRAM_CHAT_ID: '@kontrastyepox'
         run: node scripts/verify-telegram.mjs
 
+      - name: Commit Telegram check
+        run: |
+          if git diff --quiet -- telegram-check.json; then
+            echo "No Telegram check changes"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add telegram-check.json
+            git commit -m "Update Telegram connection check"
+            git push
+          fi
+
       - name: Publish to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -62,12 +74,12 @@ jobs:
 
       - name: Commit Telegram state
         run: |
-          if git diff --quiet -- telegram-state.json telegram-check.json; then
+          if git diff --quiet -- telegram-state.json; then
             echo "No Telegram state changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add telegram-state.json telegram-check.json
-          git commit -m "Update Telegram connection state"
+          git add telegram-state.json
+          git commit -m "Update Telegram publish state"
           git push
