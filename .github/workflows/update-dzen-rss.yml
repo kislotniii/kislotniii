@@ -33,6 +33,21 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Check Dzen discovery source
+        run: node scripts/check-dzen-discovery.mjs
+
+      - name: Commit Dzen discovery check
+        run: |
+          if [ -z "$(git status --porcelain -- dzen-discovery-check.json)" ]; then
+            echo "No Dzen discovery check changes"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add dzen-discovery-check.json
+            git commit -m "Update Dzen discovery check"
+            git push
+          fi
+
       - name: Build RSS feed
         run: npm run update-feed
 
