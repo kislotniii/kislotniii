@@ -6,6 +6,7 @@ const FEED_URL = 'https://raw.githubusercontent.com/kislotniii/kislotniii/main/f
 const STATE_PATH = new URL('../state.json', import.meta.url);
 const FEED_PATH = new URL('../feed.xml', import.meta.url);
 const RECOVERY_URL = 'https://dzen.ru/a/aoVi01c91GQkz-sh';
+const BRIDGE_URL = 'https://rss.mabinsight.co.uk/?action=display&bridge=YandexZenBridge&channelURL=https%3A%2F%2Fdzen.ru%2Fkodistori1&limit=30&format=Atom';
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -54,6 +55,34 @@ async function openPage(browser, url) {
   return page;
 }
 
+async function listArticlesFromBridge() {
+  const response = await fetch(BRIDGE_URL, {
+    headers: {
+      'user-agent': USER_AGENT,
+      accept: 'application/atom+xml,application/xml,text/xml;q=0.9,*/*;q=0.8',
+    },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(45_000),
+  });
+  if (!response.ok) throw new Error(`YandexZenBridge HTTP ${response.status}`);
+  const xml = await response.text();
+
+  const urls = [];
+  const seen = new Set();
+  const regex = /https?:\/\/(?:www\.)?dzen\.ru\/a\/[A-Za-z0-9_-]+/g;
+  for (const match of xml.matchAll(regex)) {
+    const url = normalizeUrl(match[0]);
+    if (!seen.has(url)) {
+      seen.add(url);
+      urls.push(url);
+    }
+  }
+
+  if (!urls.length) throw new Error('YandexZenBridge returned no article URLs');
+  console.log(`YandexZenBridge: found ${urls.length} article(s)`);
+  return urls.map((url) => ({ url, title: 'Статья', image: '' }));
+}
+
 async function listArticlesFromChannel(browser) {
   const page = await openPage(browser, CHANNEL_URL);
   try {
@@ -86,11 +115,20 @@ async function listArticlesFromChannel(browser) {
     }
 
     const items = [...dedup.values()];
-    console.log(`Channel page: found ${items.length} article(s)`);
+    console.log(`Channel page fallback: found ${items.length} article(s)`);
     if (!items.length) throw new Error('No article links found on channel page');
     return items;
   } finally {
     await page.close();
+  }
+}
+
+async function listArticles(browser) {
+  try {
+    return await listArticlesFromBridge();
+  } catch (error) {
+    console.warn(`Bridge discovery failed: ${error.message}. Falling back to channel page.`);
+    return await listArticlesFromChannel(browser);
   }
 }
 
@@ -234,7 +272,7 @@ async function main() {
 
   try {
     const state = await loadState();
-    const current = await listArticlesFromChannel(browser);
+    const current = await listArticles(browser);
     const currentUrls = current.map((x) => normalizeUrl(x.url));
 
     if (!state.initialized) {
@@ -248,10 +286,6 @@ async function main() {
     const seen = new Set(state.seen);
     let fresh = current.filter((item) => !seen.has(normalizeUrl(item.url)));
 
-    // Recovery for the noon article that was accidentally absorbed into the
-    // bootstrap when v4 was deployed after it had already been published.
-    // This branch can only run while the feed is empty; after successful
-    // recovery state.items contains the article and it will not repeat.
     if (!fresh.length && !state.items?.length) {
       const recovery = current.find((item) => normalizeUrl(item.url) === RECOVERY_URL);
       if (recovery) {
