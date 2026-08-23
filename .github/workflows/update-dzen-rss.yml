@@ -56,7 +56,7 @@ jobs:
 
       - name: Commit Telegram check
         run: |
-          if git diff --quiet -- telegram-check.json; then
+          if [ -z "$(git status --porcelain -- telegram-check.json)" ]; then
             echo "No Telegram check changes"
           else
             git config user.name "github-actions[bot]"
