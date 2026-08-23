@@ -11,23 +11,38 @@ async function call(method, body = {}) {
     body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok || !data.ok) throw new Error(`${method}: ${response.status} ${JSON.stringify(data)}`);
+  if (!response.ok || !data.ok) {
+    const description = String(data?.description || `HTTP ${response.status}`)
+      .replace(TOKEN, '[redacted]');
+    throw new Error(`${method}: ${description}`);
+  }
   return data.result;
 }
 
-if (!TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
+let result;
+try {
+  if (!TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
+  const me = await call('getMe');
+  const member = await call('getChatMember', { chat_id: CHAT_ID, user_id: me.id });
+  const canPost = member.status === 'creator' || (member.status === 'administrator' && member.can_post_messages !== false);
+  if (!canPost) throw new Error(`Bot cannot post: status=${member.status}, can_post_messages=${member.can_post_messages}`);
+  result = {
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    bot: `@${me.username || me.id}`,
+    channel: CHAT_ID,
+    status: member.status,
+    canPost: true
+  };
+  console.log(`Telegram verified: ${result.bot} -> ${CHAT_ID}`);
+} catch (error) {
+  result = {
+    ok: false,
+    checkedAt: new Date().toISOString(),
+    channel: CHAT_ID,
+    error: String(error?.message || error).replace(TOKEN, '[redacted]')
+  };
+  console.error(`Telegram verification failed: ${result.error}`);
+}
 
-const me = await call('getMe');
-const member = await call('getChatMember', { chat_id: CHAT_ID, user_id: me.id });
-const canPost = member.status === 'creator' || (member.status === 'administrator' && member.can_post_messages !== false);
-if (!canPost) throw new Error(`Bot cannot post to ${CHAT_ID}: status=${member.status}, can_post_messages=${member.can_post_messages}`);
-
-const result = {
-  checkedAt: new Date().toISOString(),
-  bot: `@${me.username || me.id}`,
-  channel: CHAT_ID,
-  status: member.status,
-  canPost: true
-};
 await fs.writeFile(OUT, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
-console.log(`Telegram verified: ${result.bot} -> ${CHAT_ID}`);
