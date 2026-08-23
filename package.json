@@ -1,12 +1,13 @@
 {
   "name": "dzen-to-vk-rss",
-  "version": "4.2.0",
-  "description": "Automatic Dzen mirror for VK RSS and Telegram channel",
+  "version": "4.3.0",
+  "description": "Automatic Dzen mirror for VK RSS, direct VK posts and Telegram channel",
   "private": true,
   "type": "module",
   "scripts": {
     "update-feed": "node scripts/build-feed-v4.mjs && node scripts/mirror-feed-images.mjs",
-    "publish-telegram": "node scripts/publish-telegram.mjs"
+    "publish-telegram": "node scripts/publish-telegram.mjs",
+    "publish-vk": "node scripts/publish-vk.mjs"
   },
   "dependencies": {
     "puppeteer-core": "^24.16.0"
