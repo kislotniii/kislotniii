@@ -1,9 +1,13 @@
 {
-  "checkedAt": "2026-08-29T09:24:23.112Z",
+  "checkedAt": "2026-08-29T09:26:35.268Z",
   "groupId": "240532552",
   "tokenConfigured": false,
   "apiReachable": false,
   "groupReadable": false,
+  "wallPhotoUploadAvailable": false,
+  "messagesPhotoUploadAvailable": false,
   "photoUploadAvailable": false,
-  "error": "VK_ACCESS_TOKEN is missing"
+  "errors": [
+    "VK_ACCESS_TOKEN is missing"
+  ]
 }
