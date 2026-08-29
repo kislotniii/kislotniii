@@ -31,21 +31,38 @@ const result = {
   tokenConfigured: Boolean(TOKEN),
   apiReachable: false,
   groupReadable: false,
+  wallPhotoUploadAvailable: false,
+  messagesPhotoUploadAvailable: false,
   photoUploadAvailable: false,
-  error: null,
+  errors: [],
 };
 
-try {
-  if (!TOKEN) throw new Error('VK_ACCESS_TOKEN is missing');
+if (!TOKEN) {
+  result.errors.push('VK_ACCESS_TOKEN is missing');
+} else {
+  try {
+    await vk('groups.getById', { group_id: GROUP_ID });
+    result.apiReachable = true;
+    result.groupReadable = true;
+  } catch (error) {
+    result.errors.push(`groups.getById: ${error?.vk?.error_msg || error?.message || String(error)}`);
+  }
 
-  await vk('groups.getById', { group_id: GROUP_ID });
-  result.apiReachable = true;
-  result.groupReadable = true;
+  try {
+    const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID });
+    result.wallPhotoUploadAvailable = Boolean(upload?.upload_url);
+  } catch (error) {
+    result.errors.push(`wall photo upload: ${error?.vk?.error_msg || error?.message || String(error)}`);
+  }
 
-  const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID });
-  result.photoUploadAvailable = Boolean(upload?.upload_url);
-} catch (error) {
-  result.error = error?.vk?.error_msg || error?.message || String(error);
+  try {
+    const upload = await vk('photos.getMessagesUploadServer', {});
+    result.messagesPhotoUploadAvailable = Boolean(upload?.upload_url);
+  } catch (error) {
+    result.errors.push(`messages photo upload: ${error?.vk?.error_msg || error?.message || String(error)}`);
+  }
+
+  result.photoUploadAvailable = result.wallPhotoUploadAvailable || result.messagesPhotoUploadAvailable;
 }
 
 await fs.writeFile(OUT, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
