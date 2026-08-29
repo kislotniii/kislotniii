@@ -154,12 +154,14 @@ async function uploadMessagesPhoto(imageUrl) {
 }
 
 async function imageAttachment(imageUrl) {
+  let wallError;
   try {
     const attachment = await uploadWallPhoto(imageUrl);
     console.log('VK image attached via wall photo upload.');
     return attachment;
-  } catch (wallError) {
-    console.warn(`Wall photo upload unavailable: ${wallError.message}`);
+  } catch (error) {
+    wallError = error;
+    console.warn(`Wall photo upload unavailable: ${error.message}`);
   }
 
   try {
@@ -167,13 +169,8 @@ async function imageAttachment(imageUrl) {
     console.log('VK image attached via messages photo upload fallback.');
     return attachment;
   } catch (messagesError) {
-    console.warn(`Messages photo upload unavailable: ${messagesError.message}`);
+    throw new Error(`VK photo attachment failed. Wall: ${wallError?.message || 'unknown'}; Messages: ${messagesError.message}`);
   }
-
-  // VK wall.post accepts one external URL in attachments. Our mirrored GitHub
-  // image is used as the final fallback so the post still gets a visual card.
-  console.log('VK image will be attached as an external GitHub image URL fallback.');
-  return imageUrl;
 }
 
 async function main() {
@@ -195,20 +192,20 @@ async function main() {
     return;
   }
 
-  const attachments = [];
-  if (article.image) attachments.push(await imageAttachment(article.image));
+  if (!article.image) throw new Error(`No cover image found for ${article.link}; refusing to publish VK post without photo.`);
+  const attachment = await imageAttachment(article.image);
 
   const guid = crypto.createHash('sha256').update(`dzen-vk:${article.link}`).digest('hex').slice(0, 32);
   const result = await vk('wall.post', {
     owner_id: `-${GROUP_ID}`,
     from_group: 1,
     message: buildMessage(article),
-    attachments: attachments.join(','),
+    attachments: attachment,
     guid,
   });
 
   await saveState(article.link, result?.post_id ?? null);
-  console.log(`Published to VK club${GROUP_ID}: ${article.title}`);
+  console.log(`Published to VK club${GROUP_ID} with photo: ${article.title}`);
 }
 
 main().catch((error) => {
