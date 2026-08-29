@@ -1,0 +1,9 @@
+{
+  "checkedAt": "2026-08-29T09:24:23.112Z",
+  "groupId": "240532552",
+  "tokenConfigured": false,
+  "apiReachable": false,
+  "groupReadable": false,
+  "photoUploadAvailable": false,
+  "error": "VK_ACCESS_TOKEN is missing"
+}
