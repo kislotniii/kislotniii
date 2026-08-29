@@ -1,6 +1,8 @@
 {
-  "ok": false,
-  "checkedAt": "2026-08-29T05:52:40.151Z",
+  "ok": true,
+  "checkedAt": "2026-08-29T06:02:47.568Z",
+  "bot": "@Dzen_JesusBot",
   "channel": "@kontrastyepox",
-  "error": "getMe: Gateway Timeout"
+  "status": "administrator",
+  "canPost": true
 }
