@@ -1,6 +1,8 @@
 {
-  "ok": false,
-  "checkedAt": "2026-09-03T22:05:08.786Z",
+  "ok": true,
+  "checkedAt": "2026-09-03T22:22:08.774Z",
+  "bot": "@Dzen_JesusBot",
   "channel": "@kontrastyepox",
-  "error": "fetch failed"
+  "status": "administrator",
+  "canPost": true
 }
