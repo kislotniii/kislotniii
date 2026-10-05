@@ -1,13 +1,15 @@
 {
-  "checkedAt": "2026-10-05T14:47:06.214Z",
+  "checkedAt": "2026-10-05T14:54:13.256Z",
   "groupId": "240532552",
-  "tokenConfigured": false,
+  "tokenConfigured": true,
   "apiReachable": false,
   "groupReadable": false,
   "wallPhotoUploadAvailable": false,
   "messagesPhotoUploadAvailable": false,
   "photoUploadAvailable": false,
   "errors": [
-    "VK_ACCESS_TOKEN is missing"
+    "groups.getById: Group authorization failed: group revoke access for this token.",
+    "wall photo upload: Group authorization failed: group revoke access for this token.",
+    "messages photo upload: Group authorization failed: group revoke access for this token."
   ]
 }
