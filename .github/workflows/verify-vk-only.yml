@@ -35,3 +35,5 @@ jobs:
           git add vk-check.json
           git commit -m "Verify VK secret after setup"
           git push
+
+# verification trigger
