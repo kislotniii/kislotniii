@@ -1,15 +1,13 @@
 {
-  "checkedAt": "2026-10-05T14:54:13.256Z",
+  "checkedAt": "2026-10-05T14:59:48.835Z",
   "groupId": "240532552",
   "tokenConfigured": true,
-  "apiReachable": false,
-  "groupReadable": false,
+  "apiReachable": true,
+  "groupReadable": true,
   "wallPhotoUploadAvailable": false,
-  "messagesPhotoUploadAvailable": false,
-  "photoUploadAvailable": false,
+  "messagesPhotoUploadAvailable": true,
+  "photoUploadAvailable": true,
   "errors": [
-    "groups.getById: Group authorization failed: group revoke access for this token.",
-    "wall photo upload: Group authorization failed: group revoke access for this token.",
-    "messages photo upload: Group authorization failed: group revoke access for this token."
+    "wall photo upload: Group authorization failed: method is unavailable with group auth."
   ]
 }
