@@ -3,6 +3,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 const TOKEN = process.env.VK_ACCESS_TOKEN || '';
+const PHOTO_TOKEN = process.env.VK_USER_ACCESS_TOKEN || '';
 const GROUP_ID = String(process.env.VK_GROUP_ID || '240532552').replace(/^-/,'');
 const API_VERSION = process.env.VK_API_VERSION || '5.199';
 const FEED_PATH = new URL('../feed.xml', import.meta.url);
@@ -70,8 +71,15 @@ function parseFeed(xml) {
   return { title, link, description, images };
 }
 
+function stripDzenRecommendations(html = '') {
+  return String(html).replace(
+    /<a\b[^>]*href="https:\/\/dzen\.ru\/a\/[^"]+"[^>]*>[\s\S]*?<\/a>/gi,
+    ''
+  );
+}
+
 function cleanArticleBody(article) {
-  let body = decodeHtml(article.description).trim();
+  let body = decodeHtml(stripDzenRecommendations(article.description)).trim();
   if (body.startsWith(article.title)) {
     body = body.slice(article.title.length).trim();
   }
@@ -141,10 +149,10 @@ async function saveState(url, postIds = []) {
   );
 }
 
-async function vk(method, params = {}) {
+async function vk(method, params = {}, accessToken = TOKEN) {
   const body = new URLSearchParams({
     ...Object.fromEntries(Object.entries(params).map(([k,v]) => [k, String(v)])),
-    access_token: TOKEN,
+    access_token: accessToken,
     v: API_VERSION,
   });
 
@@ -206,7 +214,7 @@ function photoAttachment(photo) {
 }
 
 async function uploadWallPhoto(imageUrl) {
-  const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID });
+  const upload = await vk('photos.getWallUploadServer', { group_id: GROUP_ID }, PHOTO_TOKEN);
   if (!upload?.upload_url) throw new Error('VK did not return wall upload URL');
 
   const uploaded = await uploadToServer(upload.upload_url, imageUrl);
@@ -215,45 +223,18 @@ async function uploadWallPhoto(imageUrl) {
     server: uploaded.server,
     photo: uploaded.photo,
     hash: uploaded.hash,
-  });
-
-  return photoAttachment(Array.isArray(saved) ? saved[0] : null);
-}
-
-async function uploadMessagesPhoto(imageUrl) {
-  const upload = await vk('photos.getMessagesUploadServer', {});
-  if (!upload?.upload_url) throw new Error('VK did not return messages upload URL');
-
-  const uploaded = await uploadToServer(upload.upload_url, imageUrl);
-  const saved = await vk('photos.saveMessagesPhoto', {
-    server: uploaded.server,
-    photo: uploaded.photo,
-    hash: uploaded.hash,
-  });
+  }, PHOTO_TOKEN);
 
   return photoAttachment(Array.isArray(saved) ? saved[0] : null);
 }
 
 async function imageAttachment(imageUrl) {
-  let wallError;
-  try {
-    const attachment = await uploadWallPhoto(imageUrl);
-    console.log('VK image attached via wall photo upload.');
-    return attachment;
-  } catch (error) {
-    wallError = error;
-    console.warn(`Wall photo upload unavailable: ${error.message}`);
+  if (!PHOTO_TOKEN) {
+    throw new Error('VK_USER_ACCESS_TOKEN is not configured; refusing to publish VK without visible wall photos.');
   }
-
-  try {
-    const attachment = await uploadMessagesPhoto(imageUrl);
-    console.log('VK image attached via messages photo upload fallback.');
-    return attachment;
-  } catch (messagesError) {
-    throw new Error(
-      `VK photo attachment failed. Wall: ${wallError?.message || 'unknown'}; Messages: ${messagesError.message}`
-    );
-  }
+  const attachment = await uploadWallPhoto(imageUrl);
+  console.log('VK image attached via wall photo upload using user token.');
+  return attachment;
 }
 
 async function uploadArticleImages(urls) {
@@ -277,6 +258,9 @@ async function main() {
   if (!TOKEN) {
     console.log('VK_ACCESS_TOKEN is not configured; VK direct publishing skipped.');
     return;
+  }
+  if (!PHOTO_TOKEN) {
+    throw new Error('VK_USER_ACCESS_TOKEN is not configured; refusing to publish VK without visible photos.');
   }
 
   const xml = await fs.readFile(FEED_PATH, 'utf8');
