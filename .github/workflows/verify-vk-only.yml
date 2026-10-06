@@ -21,6 +21,7 @@ jobs:
       - name: Verify VK token and photo upload
         env:
           VK_ACCESS_TOKEN: ${{ secrets.VK_ACCESS_TOKEN }}
+          VK_USER_ACCESS_TOKEN: ${{ secrets.VK_USER_ACCESS_TOKEN }}
           VK_GROUP_ID: '240532552'
         run: node scripts/verify-vk.mjs
 
