@@ -9,8 +9,8 @@ const API_VERSION = process.env.VK_API_VERSION || '5.199';
 const FEED_PATH = new URL('../feed.xml', import.meta.url);
 const STATE_PATH = new URL('../vk-state.json', import.meta.url);
 const MAX_POST_CHARS = 14000;
-const MAX_PHOTOS = 10;
-const BODY_CHUNK_CHARS = 13200;
+const BODY_CHUNK_CHARS = 14500;
+const CTA = 'Подписывайтесь, чтобы не потерять [club240532552|КОНТРАСТЫ ЭПОХ]';
 
 function decodeXml(text = '') {
   return String(text)
@@ -124,11 +124,16 @@ function splitBody(body, maxLen = BODY_CHUNK_CHARS) {
 
 function buildMessages(article) {
   const body = cleanArticleBody(article);
-  const chunks = splitBody(body);
+  const reserve = Math.max(article.title.length + 4, CTA.length + 4, 200);
+  const chunks = splitBody(body, Math.min(BODY_CHUNK_CHARS, MAX_POST_CHARS - reserve));
 
   return chunks.map((chunk, index) => {
-    const continuation = index === 0 ? '' : `Продолжение ${index + 1}/${chunks.length}\n\n`;
-    const message = `${article.title}\n\n${continuation}${chunk}`.trim();
+    const prefix = index === 0
+      ? `${article.title}\n\n`
+      : `Продолжение ${index + 1}/${chunks.length}\n\n`;
+    const suffix = index === chunks.length - 1 ? `\n\n${CTA}` : '';
+    const message = `${prefix}${chunk}${suffix}`.trim();
+
     if (message.length > MAX_POST_CHARS) {
       throw new Error(`VK message chunk is too long: ${message.length} chars`);
     }
@@ -237,21 +242,10 @@ async function imageAttachment(imageUrl) {
   return attachment;
 }
 
-async function uploadArticleImages(urls) {
+async function uploadArticleCover(urls) {
   if (!urls.length) throw new Error('No images found in the article; refusing to publish VK post without photo.');
-
-  const attachments = [];
-  for (const [index, url] of urls.slice(0, MAX_PHOTOS).entries()) {
-    try {
-      attachments.push(await imageAttachment(url));
-    } catch (error) {
-      if (index === 0) throw error;
-      console.warn(`Skipping additional VK image ${index + 1}: ${error.message}`);
-    }
-  }
-
-  if (!attachments.length) throw new Error('Could not upload the article cover to VK.');
-  return attachments;
+  const attachment = await imageAttachment(urls[0]);
+  return attachment;
 }
 
 async function main() {
@@ -277,7 +271,7 @@ async function main() {
   }
 
   const messages = buildMessages(article);
-  const attachments = await uploadArticleImages(article.images);
+  const coverAttachment = await uploadArticleCover(article.images);
   const postIds = [];
 
   for (let index = 0; index < messages.length; index++) {
@@ -291,7 +285,7 @@ async function main() {
       owner_id: `-${GROUP_ID}`,
       from_group: 1,
       message: messages[index],
-      attachments: index === 0 ? attachments.join(',') : '',
+      attachments: index === 0 ? coverAttachment : '',
       guid,
     });
 
@@ -300,7 +294,7 @@ async function main() {
   }
 
   await saveState(article.link, postIds);
-  console.log(`Published full Dzen article to VK in ${messages.length} post(s), with ${attachments.length} image(s).`);
+  console.log(`Published full Dzen article to VK in ${messages.length} post(s), with one cover image and subscription CTA.`);
 }
 
 main().catch((error) => {
