@@ -72,6 +72,7 @@ test('sends all unique photos with exactly one wall.post and preserves the retry
   assert.equal(posts.length, 1);
   assert.equal(posts[0].params.message, buildMessage(article));
   assert.equal(posts[0].params.attachments, 'photo-240532552_1,photo-240532552_2');
+  assert.equal(posts[0].params.primary_attachments_mode, 'carousel');
   assert.equal(posts[0].params.from_group, '1');
   assert.equal(posts[0].params.owner_id, '-240532552');
   assert.equal(posts[0].params.guid, crypto.createHash('sha256').update(`dzen-vk-full:${article.link}:0`).digest('hex').slice(0, 32));
