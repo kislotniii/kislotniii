@@ -1,14 +1,13 @@
 {
-  "checkedAt": "2026-11-16T13:59:30.658Z",
+  "checkedAt": "2026-11-16T18:54:32.628Z",
   "groupId": "240532552",
   "tokenConfigured": true,
-  "userTokenConfigured": true,
-  "apiReachable": false,
-  "groupReadable": false,
+  "userTokenConfigured": false,
+  "apiReachable": true,
+  "groupReadable": true,
   "wallPhotoUploadAvailable": false,
   "photoUploadAvailable": false,
   "errors": [
-    "groups.getById: fetch failed",
-    "user wall photo upload: Group authorization failed: method is unavailable with group auth."
+    "VK_USER_ACCESS_TOKEN is missing"
   ]
 }
