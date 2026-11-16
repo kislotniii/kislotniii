@@ -136,7 +136,23 @@ async function scrapeArticle(browser, item) {
   const page = await openPage(browser, item.url);
   const selectors = ['article [class*="article-render"]', '[class*="article__content"]', '[class*="article-render"]', 'article', 'main'];
   try {
-    await page.waitForSelector(selectors.join(', '), { timeout: 35_000 });
+    // Dzen can render empty article placeholders before the actual content.
+    // Wait for readable text and inspect every matching block, not only the first.
+    try {
+      await page.waitForFunction((contentSelectors) => contentSelectors.some((selector) =>
+        [...document.querySelectorAll(selector)].some((node) => (node.textContent || '').trim().length >= 500)
+      ), { timeout: 35_000 }, selectors);
+    } catch (error) {
+      const diagnostic = await page.evaluate((contentSelectors) => ({
+        url: location.href,
+        title: document.title,
+        blocks: contentSelectors.map((selector) => ({
+          selector,
+          lengths: [...document.querySelectorAll(selector)].map((node) => (node.textContent || '').trim().length),
+        })),
+      }), selectors);
+      throw new Error(`Article content did not load: ${JSON.stringify(diagnostic)}. ${error.message}`);
+    }
 
     const publicationMeta = await page.evaluate(() => {
       const meta = document.querySelector('meta[property="article:published_time"], meta[name="article:published_time"], meta[itemprop="datePublished"]');
@@ -160,7 +176,8 @@ async function scrapeArticle(browser, item) {
     });
 
     const rootInfo = await page.evaluate((contentSelectors) => {
-      const root = contentSelectors.map((s) => document.querySelector(s)).find(Boolean);
+      const root = contentSelectors.flatMap((s) => [...document.querySelectorAll(s)])
+        .find((node) => (node.textContent || '').trim().length >= 500);
       if (!root) return null;
       const rect = root.getBoundingClientRect();
       return { top: Math.max(0, rect.top + scrollY), height: Math.max(rect.height, root.scrollHeight || 0) };
@@ -176,7 +193,8 @@ async function scrapeArticle(browser, item) {
     }
 
     const extracted = await page.evaluate((contentSelectors) => {
-      const root = contentSelectors.map((s) => document.querySelector(s)).find(Boolean);
+      const root = contentSelectors.flatMap((s) => [...document.querySelectorAll(s)])
+        .find((node) => (node.textContent || '').trim().length >= 500);
       if (!root) return null;
       const clone = root.cloneNode(true);
 
@@ -211,7 +229,7 @@ async function scrapeArticle(browser, item) {
       return { title, html, text, firstImage };
     }, selectors);
 
-    if (!extracted?.html || extracted.text.length < 500) throw new Error(`Article extraction incomplete: ${extracted?.text?.length || 0} chars`);
+    if (!extracted?.html || extracted.text.length < 500) throw new Error(`Article extraction incomplete: ${extracted?.text?.length || 0} chars at ${page.url()}`);
 
     const image = extracted.firstImage || item.image || '';
     let fullHtml = extracted.html;
@@ -313,3 +331,4 @@ async function main() {
 }
 
 main().catch((error) => { console.error(error?.stack || error); process.exit(1); });
+
