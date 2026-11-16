@@ -223,6 +223,7 @@ export async function publishArticle(article) {
     from_group: 1,
     message,
     attachments: attachments.join(','),
+    primary_attachments_mode: 'carousel',
     guid,
   });
   if (!result?.post_id) throw new Error('VK did not return a published post ID; article state was not advanced.');
