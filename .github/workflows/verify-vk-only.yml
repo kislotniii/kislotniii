@@ -1,12 +1,17 @@
 name: Verify VK Only
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - '.github/workflows/verify-vk-only.yml'
 
 permissions:
   contents: write
+
+concurrency:
+  group: dzen-rss-updater
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -21,7 +26,7 @@ jobs:
       - name: Verify VK token and photo upload
         env:
           VK_ACCESS_TOKEN: ${{ secrets.VK_ACCESS_TOKEN }}
-          VK_USER_ACCESS_TOKEN: ${{ secrets.VK_USER_ACCESS_TOKEN }}
+          VK_USER_ACCESS_TOKEN: ${{ secrets.VK_USER_ACCESS_TOKEN || secrets.VK_TOKEN_SECRET }}
           VK_GROUP_ID: '240532552'
         run: node scripts/verify-vk.mjs
 
