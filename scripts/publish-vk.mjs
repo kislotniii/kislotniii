@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 
 const TOKEN = process.env.VK_ACCESS_TOKEN || '';
 const PHOTO_TOKEN = process.env.VK_USER_ACCESS_TOKEN || '';
@@ -8,8 +9,8 @@ const GROUP_ID = String(process.env.VK_GROUP_ID || '240532552').replace(/^-/,'')
 const API_VERSION = process.env.VK_API_VERSION || '5.199';
 const FEED_PATH = new URL('../feed.xml', import.meta.url);
 const STATE_PATH = new URL('../vk-state.json', import.meta.url);
-const MAX_POST_CHARS = 14000;
-const BODY_CHUNK_CHARS = 14500;
+const MAX_POST_CHARS = 16384;
+const MAX_POST_PHOTOS = 10;
 const CTA = 'Подписывайтесь, чтобы не потерять [club240532552|КОНТРАСТЫ ЭПОХ]';
 
 function decodeXml(text = '') {
@@ -24,7 +25,7 @@ function decodeXml(text = '') {
 function decodeHtml(text = '') {
   return String(text)
     .replace(/<br\s*\/?\s*>/gi, '\n')
-    .replace(/<\/(p|div|h1|h2|h3|blockquote|figure|figcaption)>/gi, '\n')
+    .replace(/<\/(p|div|h1|h2|h3|blockquote|figure|figcaption)>/gi, '\n\n')
     .replace(/<[^>]+>/g, '')
     .replace(/&nbsp;/g, ' ')
     .replace(/&quot;/g, '"')
@@ -54,7 +55,7 @@ function parseFeed(xml) {
 
   const title = extractTag(item, 'title');
   const link = extractTag(item, 'link');
-  const description = extractTag(item, 'description') || extractTag(item, 'content:encoded');
+  const description = extractTag(item, 'content:encoded') || extractTag(item, 'description');
 
   const media = item.match(/<media:content[^>]*url="([^"]+)"/i)?.[1]
     || item.match(/<media:thumbnail[^>]*url="([^"]+)"/i)?.[1]
@@ -86,59 +87,14 @@ function cleanArticleBody(article) {
   return body;
 }
 
-function splitLongParagraph(text, maxLen) {
-  const pieces = [];
-  let rest = text.trim();
-  while (rest.length > maxLen) {
-    let cut = rest.lastIndexOf(' ', maxLen);
-    if (cut < Math.floor(maxLen * 0.65)) cut = maxLen;
-    pieces.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
-  }
-  if (rest) pieces.push(rest);
-  return pieces;
-}
-
-function splitBody(body, maxLen = BODY_CHUNK_CHARS) {
-  const paragraphs = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-  const chunks = [];
-  let current = '';
-
-  for (const paragraph of paragraphs) {
-    const pieces = paragraph.length > maxLen ? splitLongParagraph(paragraph, maxLen) : [paragraph];
-
-    for (const piece of pieces) {
-      const candidate = current ? `${current}\n\n${piece}` : piece;
-      if (candidate.length <= maxLen) {
-        current = candidate;
-      } else {
-        if (current) chunks.push(current);
-        current = piece;
-      }
-    }
-  }
-
-  if (current) chunks.push(current);
-  return chunks.length ? chunks : [''];
-}
-
-function buildMessages(article) {
+export function buildMessage(article) {
   const body = cleanArticleBody(article);
-  const reserve = Math.max(article.title.length + 4, CTA.length + 4, 200);
-  const chunks = splitBody(body, Math.min(BODY_CHUNK_CHARS, MAX_POST_CHARS - reserve));
+  const message = [article.title.trim(), body, CTA].filter(Boolean).join('\n\n');
 
-  return chunks.map((chunk, index) => {
-    const prefix = index === 0
-      ? `${article.title}\n\n`
-      : `Продолжение ${index + 1}/${chunks.length}\n\n`;
-    const suffix = index === chunks.length - 1 ? `\n\n${CTA}` : '';
-    const message = `${prefix}${chunk}${suffix}`.trim();
-
-    if (message.length > MAX_POST_CHARS) {
-      throw new Error(`VK message chunk is too long: ${message.length} chars`);
-    }
-    return message;
-  });
+  if (message.length > MAX_POST_CHARS) {
+    throw new Error(`VK article is too long for one post: ${message.length}/${MAX_POST_CHARS} chars. Article was not split, truncated or marked as published: ${article.link}`);
+  }
+  return message;
 }
 
 async function loadState() {
@@ -242,10 +198,35 @@ async function imageAttachment(imageUrl) {
   return attachment;
 }
 
-async function uploadArticleCover(urls) {
-  if (!urls.length) throw new Error('No images found in the article; refusing to publish VK post without photo.');
-  const attachment = await imageAttachment(urls[0]);
-  return attachment;
+async function uploadArticlePhotos(urls) {
+  const uniqueUrls = [...new Set(urls.filter(Boolean))];
+  if (!uniqueUrls.length) throw new Error('No images found in the article; refusing to publish VK post without photo.');
+  if (uniqueUrls.length > MAX_POST_PHOTOS) {
+    console.warn(`VK allows ${MAX_POST_PHOTOS} photos per post; attaching the first ${MAX_POST_PHOTOS} of ${uniqueUrls.length} article images.`);
+  }
+  const attachments = [];
+  for (const url of uniqueUrls.slice(0, MAX_POST_PHOTOS)) {
+    attachments.push(await imageAttachment(url));
+  }
+  return attachments;
+}
+
+export async function publishArticle(article) {
+  // Validate the complete text before uploading photos or creating a wall post.
+  const message = buildMessage(article);
+  const attachments = await uploadArticlePhotos(article.images);
+  // Preserve the first-post GUID used by the old publisher for retry protection.
+  const guid = crypto.createHash('sha256')
+    .update(`dzen-vk-full:${article.link}:0`).digest('hex').slice(0, 32);
+  const result = await vk('wall.post', {
+    owner_id: `-${GROUP_ID}`,
+    from_group: 1,
+    message,
+    attachments: attachments.join(','),
+    guid,
+  });
+  if (!result?.post_id) throw new Error('VK did not return a published post ID; article state was not advanced.');
+  return [result.post_id];
 }
 
 async function main() {
@@ -270,34 +251,16 @@ async function main() {
     return;
   }
 
-  const messages = buildMessages(article);
-  const coverAttachment = await uploadArticleCover(article.images);
-  const postIds = [];
-
-  for (let index = 0; index < messages.length; index++) {
-    const guid = crypto
-      .createHash('sha256')
-      .update(`dzen-vk-full:${article.link}:${index}`)
-      .digest('hex')
-      .slice(0, 32);
-
-    const result = await vk('wall.post', {
-      owner_id: `-${GROUP_ID}`,
-      from_group: 1,
-      message: messages[index],
-      attachments: index === 0 ? coverAttachment : '',
-      guid,
-    });
-
-    postIds.push(result?.post_id ?? null);
-    console.log(`Published VK full post part ${index + 1}/${messages.length}: ${article.title}`);
-  }
-
+  const postIds = await publishArticle(article);
   await saveState(article.link, postIds);
-  console.log(`Published full Dzen article to VK in ${messages.length} post(s), with one cover image and subscription CTA.`);
+  console.log(`Published one standalone VK post with article photos and subscription CTA: ${article.title}`);
 }
 
-main().catch((error) => {
-  console.error(error?.stack || error);
-  process.exit(1);
-});
+export { parseFeed };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error?.stack || error);
+    process.exit(1);
+  });
+}
